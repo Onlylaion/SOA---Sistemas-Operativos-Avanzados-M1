@@ -1,0 +1,7 @@
+# Wokwi Library List
+# See https://docs.wokwi.com/guides/libraries
+
+LiquidCrystal I2C
+Keypad
+Adafruit FT6206 Library
+ESP32Servo
