@@ -32,10 +32,20 @@
 #define TIEMPO_ERROR 3000             // ms que se muestra un mensaje temporal
 #define TIMEOUT_INGRESO 5000          // ms de inactividad del teclado
 
+// ---- WiFi ----
+const char* WIFI_SSID = "TeleCentro-85b5";
+const char* WIFI_PASS = "TKHZNZUMNJRZ";
+
 // ---- MQTT ----
+const char* MQTT_BROKER    = "192.168.0.7";
+const uint16_t MQTT_PORT   = 1883;
+const char* MQTT_CLIENT_ID = "esp32-puerta-gym";
 #define TOPIC_OCUPACION "gimnasio/ocupacion/cantidad"   // Topic donde se publica la cantidad de gente
 #define CAPACIDAD_MAXIMA 50                             // Tope físico del gimnasio
 int cantidadPersonas = 0;                               // Contador de ocupación actual, arranca en 0
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
 
 // ---- Buzzer ----
 const int BUZZER_PIN = 13;
@@ -74,22 +84,18 @@ char ultimo_caracter = '\0';
 // ---- Puente H DRV8833 ----
 #define IN1 12
 #define IN2 14
-#define VELOCIDAD_MOTOR 127 
+#define VELOCIDAD_MOTOR 127
 
 // ---- Sensor touch capacitivo ----
 #define TOUCH_PIN 15
-#define UMBRAL_TOUCH 1000        // lectura < UMBRAL_TOUCH => tocado
-bool touch_mantenido = false;    // evita disparar el evento en cada lectura mientras
+#define UMBRAL_TOUCH 1000        
+bool touch_mantenido = false;    // evita disparar el evento en cada lectura mientras siga tocado
 
-// ---- Timeout de teclado: xTimer + semáforo binario ----
-// (antes era un flag volatile; el callback corre en la tarea Timer Service de
-//  FreeRTOS y se leía desde v_task_get_new_event sin sincronización)
-TimerHandle_t   timerInactividadTeclado = NULL;
+// ---- Timeout de teclado - xTimer y semáforo binario ----
+TimerHandle_t     timerInactividadTeclado = NULL;
 SemaphoreHandle_t semTimeoutTeclado = NULL;
 
-// ---- Timeout de puerta: millis() ----
-// lct y error_timer las escribe v_loop_task y las lee v_task_get_new_event
-// (en verificarTimeoutPuerta / verificarTimeoutError) => se protegen con mutex.
+// ---- Timeout de puerta - millis() ----
 bool timer_puerta_activo = false;
 unsigned long lct = 0;
 int tiempoRestante = TIEMPO_PUERTA_ABIERTA / 1000;
@@ -98,8 +104,8 @@ int tiempoRestante = TIEMPO_PUERTA_ABIERTA / 1000;
 bool mostrando_error = false;
 unsigned long error_timer = 0;
 
-// Mutex que protege el "paquete" lct/timer_puerta_activo/error_timer/mostrando_error,
-// compartido entre v_loop_task (que las escribe) y v_task_get_new_event (que las lee).
+// Mutex que protege lct/timer_puerta_activo/error_timer/mostrando_error,
+// compartido entre v_loop_task (escribe) y v_task_get_new_event (lee).
 SemaphoreHandle_t mutexTimersCompartidos = NULL;
 
 enum states { ST_ARRANQUE, ST_PUERTA_CERRADA, ST_ABRIENDO_PUERTA, ST_PUERTA_ABIERTA, ST_CERRANDO_PUERTA } current_state = ST_ARRANQUE;
@@ -127,7 +133,7 @@ String events_s[] = {
 
 #define MAX_STATES 5
 #define MAX_EVENTS 11
-#define MAX_TIPO_EVENTOS 6   
+#define MAX_TIPO_EVENTOS 6
 
 typedef void (*transition)();
 
@@ -138,6 +144,8 @@ void error();
 void contrasenia_invalida();
 void limpiar_error();
 void abrir_puerta();
+void abrir_puerta_ingreso();
+void abrir_puerta_salida();
 void cerrar_puerta();
 void ingreso_tecla();
 void resetear_teclado();
@@ -154,24 +162,22 @@ events verificarEstadoSensorKeypad();
 events verificarFinCarrera();
 events verificarEstadoSensorTouch();
 
-// Cuando sumes el touch: agregá verificarEstadoSensorTouch acá y subí MAX_TIPO_EVENTOS
 events (*verificar_sensor[MAX_TIPO_EVENTOS])() = {
   verificarTimeoutKeypad, verificarTimeoutPuerta, verificarTimeoutError,
   verificarEstadoSensorTouch, verificarEstadoSensorKeypad, verificarFinCarrera
 };
 
 // ------------------------------------------------------------
-// Matriz completa (igual a la original)
-// EV_TOUCH_DETECTADO no se dispara todavía: falta el verificador del touch
+// Matriz de estados
 // ------------------------------------------------------------
 transition state_table[MAX_STATES][MAX_EVENTS] =
 {
-  //EV_CONT      , EV_CONTRASENIA_INVALIDA, EV_CONTRASENIA_VALIDA, EV_TOUCH_DETECTADO, EV_FIN_CARRERA_ABIERTO, EV_FIN_CARRERA_CERRADO, EV_INGRESO_TECLA, EV_TIMEOUT_PUERTA, EV_TIMEOUT_ERROR, EV_TIMEOUT_TECLADO, EV_CANCELAR_TECLADO
-  { init_sist    , error                  , error                , error             , error                 , error                 , error          , error            , error          , error             , error            }, // ST_ARRANQUE
-  { none         , contrasenia_invalida   , abrir_puerta         , abrir_puerta      , error                 , error                 , ingreso_tecla  , error            , limpiar_error  , resetear_teclado  , resetear_teclado }, // ST_PUERTA_CERRADA
-  { none         , error                  , error                , error             , fin_carrera_abierto   , error                 , error          , error            , error          , error             , error            }, // ST_ABRIENDO_PUERTA
-  { mostrar_timer, error                  , error                , cerrar_puerta     , error                 , error                 , error          , cerrar_puerta    , error          , error             , error            }, // ST_PUERTA_ABIERTA
-  { none         , error                  , error                , error             , error                 , fin_carrera_cerrado   , error          , error            , error          , error             , error            }  // ST_CERRANDO_PUERTA
+  //EV_CONT      , EV_CONTRASENIA_INVALIDA, EV_CONTRASENIA_VALIDA , EV_TOUCH_DETECTADO , EV_FIN_CARRERA_ABIERTO, EV_FIN_CARRERA_CERRADO, EV_INGRESO_TECLA, EV_TIMEOUT_PUERTA, EV_TIMEOUT_ERROR, EV_TIMEOUT_TECLADO, EV_CANCELAR_TECLADO
+  { init_sist    , error                  , error                 , error              , error                 , error                 , error          , error            , error          , error             , error            }, // ST_ARRANQUE
+  { none         , contrasenia_invalida   , abrir_puerta_ingreso  , abrir_puerta_salida, error                 , error                 , ingreso_tecla  , error            , limpiar_error  , resetear_teclado  , resetear_teclado }, // ST_PUERTA_CERRADA
+  { none         , error                  , error                 , error              , fin_carrera_abierto   , error                 , error          , error            , error          , error             , error            }, // ST_ABRIENDO_PUERTA
+  { mostrar_timer, error                  , error                 , cerrar_puerta      , error                 , error                 , error          , cerrar_puerta    , error          , error             , error            }, // ST_PUERTA_ABIERTA
+  { none         , error                  , error                 , error              , error                 , fin_carrera_cerrado   , error          , error            , error          , error             , error            }  // ST_CERRANDO_PUERTA
 };
 
 #define SIZE_QUEUE_TIMER 30
@@ -179,18 +185,117 @@ TaskHandle_t loopTaskHandler = NULL;
 TaskHandle_t loopNewEventHandler = NULL;
 QueueHandle_t queueEvents = NULL;
 
+#define INTERVALO_RECONEXION_MQTT 5000   
+QueueHandle_t queueOcupacion = NULL;     
+TaskHandle_t  mqttTaskHandler = NULL;
+
 // ============================================================
 // MQTT_conecction.h
 // ============================================================
-void actualizarYPublicarOcupacion(int delta) {                // delta = +1 al entrar, -1 al salir
-  cantidadPersonas += delta;                                  // Suma o resta según lo que le pasaron
- 
-  if (cantidadPersonas < 0) cantidadPersonas = 0;             // Guarda contra números negativos (por si algo se desincroniza)
-  if (cantidadPersonas > CAPACIDAD_MAXIMA) cantidadPersonas = CAPACIDAD_MAXIMA;  // Guarda contra pasarse del máximo
- 
-  char payload[8];                                            // Buffer chico para el número como texto
-  sprintf(payload, "%d", cantidadPersonas);                   // Convierte el int a texto plano, ej. "15"
-  mqttClient.publish(TOPIC_OCUPACION, payload);               // Publica el valor nuevo — texto plano, como ya definimos con la app
+void conectarWiFi()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 15000)
+  {
+    delay(300);
+  }
+
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("WiFi conectado");
+  }
+  else
+  {
+    Serial.println("WiFi: no se pudo conectar (el sistema sigue sin MQTT)");
+  }
+}
+
+void publicarOcupacion(int valor)
+{
+  char payload[8];
+  sprintf(payload, "%d", valor);
+
+  if (mqttClient.publish(TOPIC_OCUPACION, payload, true))
+  {
+    Serial.println(String("MQTT: publicado ") + payload);
+  }
+  else
+  {
+    Serial.println(String("MQTT: fallo el publish, state=") + mqttClient.state());
+  }
+}
+
+bool conectarMQTT()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.println("MQTT: sin WiFi");
+    return false;
+  }
+
+  if (mqttClient.connect(MQTT_CLIENT_ID))
+  {
+    Serial.println("MQTT conectado");
+    return true;
+  }
+
+  Serial.println(String("MQTT: fallo la conexion, state=") + mqttClient.state());
+  return false;
+}
+
+void v_task_mqtt(void *pvParameters)
+{
+  int ocupacionActual = 0;
+  unsigned long ultimoIntento = 0;
+  bool primerIntento = true;
+
+  while (1)
+  {
+    int nuevoValor;
+    bool hayNuevoValor = (xQueueReceive(queueOcupacion, &nuevoValor, pdMS_TO_TICKS(50)) == pdTRUE);
+    if (hayNuevoValor)
+    {
+      ocupacionActual = nuevoValor;
+    }
+
+    if (mqttClient.connected())
+    {
+      mqttClient.loop();
+      if (hayNuevoValor)
+      {
+        publicarOcupacion(ocupacionActual);
+      }
+    }
+    else if (primerIntento || millis() - ultimoIntento >= INTERVALO_RECONEXION_MQTT)
+    {
+      primerIntento = false;
+      ultimoIntento = millis();
+      if (conectarMQTT())
+      {
+        publicarOcupacion(ocupacionActual);
+      }
+    }
+  }
+}
+
+void actualizarYPublicarOcupacion(int delta)                  // delta = +1 al entrar, -1 al salir
+{
+  cantidadPersonas += delta;
+
+  if (cantidadPersonas < 0) 
+  {
+    cantidadPersonas = 0;
+  }
+  
+  if (cantidadPersonas > CAPACIDAD_MAXIMA) 
+  {
+    cantidadPersonas = CAPACIDAD_MAXIMA;
+  }
+
+  xQueueOverwrite(queueOcupacion, &cantidadPersonas);         
 }
 
 // ============================================================
@@ -199,7 +304,7 @@ void actualizarYPublicarOcupacion(int delta) {                // delta = +1 al e
 events verificarEstadoSensorKeypad()
 {
   events new_event = EV_CONT;
-  char tecla = keypad.getKey();   // devuelve la tecla solo al presionarla; NO_KEY (0) si no hay
+  char tecla = keypad.getKey();
 
   if (tecla != NO_KEY)
   {
@@ -251,12 +356,12 @@ events verificarEstadoSensorTouch()
 
   if (tocado && !touch_mantenido)
   {
-    touch_mantenido = true;          // flanco: recién empieza el toque
+    touch_mantenido = true;          // recién empieza el toque
     new_event = EV_TOUCH_DETECTADO;
   }
   else if (!tocado && touch_mantenido)
   {
-    touch_mantenido = false;         // soltó: se rearma para el próximo toque
+    touch_mantenido = false;         // se rearma para el próximo toque
   }
   return new_event;
 }
@@ -265,10 +370,6 @@ events verificarEstadoSensorTouch()
 // Timers.h
 // ============================================================
 
-// Callback del xTimer: corre en la tarea "Timer Service" de FreeRTOS.
-// Antes levantaba un flag volatile leído sin sincronización desde otra
-// tarea; ahora libera un semáforo binario, que es la forma correcta de
-// pasar este tipo de señal entre tareas.
 void callbackTimeoutTeclado(TimerHandle_t xTimer)
 {
   xSemaphoreGive(semTimeoutTeclado);
@@ -277,7 +378,7 @@ void callbackTimeoutTeclado(TimerHandle_t xTimer)
 events verificarTimeoutKeypad()
 {
   events new_event = EV_CONT;
-  // Toma no bloqueante (timeout 0): si el semáforo no fue liberado, sigue de largo.
+  // Toma no bloqueante (timeout 0)
   if (xSemaphoreTake(semTimeoutTeclado, 0) == pdTRUE)
   {
     new_event = EV_TIMEOUT_TECLADO;
@@ -289,8 +390,6 @@ events verificarTimeoutPuerta()
 {
   events new_event = EV_CONT;
 
-  // lct y timer_puerta_activo las escribe v_loop_task; se protegen con mutex
-  // para leerlas de forma consistente desde esta tarea.
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   bool activo = timer_puerta_activo;
   unsigned long inicio = lct;
@@ -307,7 +406,6 @@ events verificarTimeoutError()
 {
   events new_event = EV_CONT;
 
-  // mostrando_error y error_timer las escribe v_loop_task; mismo mutex que arriba.
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   bool hayError = mostrando_error;
   unsigned long inicio = error_timer;
@@ -321,7 +419,7 @@ events verificarTimeoutError()
 }
 
 // ============================================================
-// Actuators.h (display / buffer del teclado / timer del teclado)
+// Actuators.h (display / buffer del teclado / timer del teclado / motor)
 // ============================================================
 void clearPasskeypad()
 {
@@ -339,8 +437,7 @@ void mostrar_pantalla_reposo()
 void detener_timer_teclado()
 {
   xTimerStop(timerInactividadTeclado, 0);
-  // Vacía el semáforo por si había quedado un timeout pendiente sin consumir
-  // (equivalente a lo que antes hacía "flag_timeout_teclado = false").
+  // Vacía el semáforo por si quedó un timeout pendiente sin consumir
   xSemaphoreTake(semTimeoutTeclado, 0);
 }
 
@@ -361,6 +458,7 @@ void motor_detener()
   analogWrite(IN1, 0);
   analogWrite(IN2, 0);   // ambos en 0 = el motor queda en punto muerto
 }
+
 // ============================================================
 // FSM_Transition.h
 // ============================================================
@@ -411,8 +509,8 @@ void contrasenia_invalida()
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("DNI Incorrecto");
-  digitalWrite(RED_LED, HIGH);     // LED ROJO: error
-  tone(BUZZER_PIN, 500, 400);      // BUZZER: beep de error
+  digitalWrite(RED_LED, HIGH);     
+  tone(BUZZER_PIN, 500, 400);      
 
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   mostrando_error = true;
@@ -422,11 +520,10 @@ void contrasenia_invalida()
   clearPasskeypad();
 }
 
-
 void limpiar_error()               // también limpia el mensaje "Puerta Cerrada"
 {
-  digitalWrite(RED_LED, LOW);      // LED ROJO: apagado
-
+  digitalWrite(RED_LED, LOW);      
+  
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   mostrando_error = false;
   xSemaphoreGive(mutexTimersCompartidos);
@@ -478,10 +575,22 @@ void abrir_puerta()
   current_state = ST_ABRIENDO_PUERTA;
 }
 
+void abrir_puerta_ingreso()
+{
+  abrir_puerta();
+  actualizarYPublicarOcupacion(+1);
+}
+
+void abrir_puerta_salida()
+{
+  abrir_puerta();
+  actualizarYPublicarOcupacion(-1);
+}
+
 void fin_carrera_abierto()
 {
-  motor_detener();                 // MOTOR: llegó al final de carrera
-  digitalWrite(GREEN_LED, LOW); 
+  motor_detener();                
+  digitalWrite(GREEN_LED, LOW);
   clearPasskeypad();
 
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
@@ -517,7 +626,7 @@ void mostrar_timer()
 
     if (tiempoRestante <= 5 && tiempoRestante > 0)
     {
-      tone(BUZZER_PIN, 1500, 50);  // BUZZER: beep en la cuenta regresiva
+      tone(BUZZER_PIN, 1500, 50);  
     }
   }
 }
@@ -530,13 +639,13 @@ void cerrar_puerta()
 
   lcd.clear();
   lcd.print("Cerrando...");
-  motor_cerrar();                  // MOTOR: gira en sentido de cierre
+  motor_cerrar();                  
   current_state = ST_CERRANDO_PUERTA;
 }
 
 void fin_carrera_cerrado()
 {
-  motor_detener();                 // MOTOR: llegó al final de carrera
+  motor_detener();                 
   clearPasskeypad();
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -557,7 +666,7 @@ void v_task_get_new_event(void *pvParameters)
 {
   enum events new_event;
   short indice = 0;
-  
+
   while (1)
   {
     indice = (indice + 1) % MAX_TIPO_EVENTOS;
@@ -603,12 +712,16 @@ void setup()
 {
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
+  queueOcupacion = xQueueCreate(1, sizeof(int));
 
-  // Mutex y semáforo se crean ANTES de lanzar las tareas, así ninguna de
-  // las dos puede llegar a usarlos sin estar inicializados.
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
 
+  conectarWiFi();
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setSocketTimeout(2);      // segundos: evita bloqueos largos si el broker no responde
+
   xTaskCreate(v_loop_task,          "v_loop_task",          4096, NULL, 1, &loopNewEventHandler);
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);
+  xTaskCreate(v_task_mqtt,          "v_task_mqtt",          4096, NULL, 1, &mqttTaskHandler);
 }
