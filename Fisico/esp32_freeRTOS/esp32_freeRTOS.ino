@@ -2,6 +2,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <Keypad.h>
 #include <string.h>
+#include <stdio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
@@ -40,6 +41,8 @@ const char* WIFI_PASS = "TKHZNZUMNJRZ";
 const char* MQTT_BROKER    = "192.168.0.7";
 const uint16_t MQTT_PORT   = 1883;
 const char* MQTT_CLIENT_ID = "esp32-puerta-gym";
+#define TOPIC_COMANDO "gimnasio/puerta/comando"         // Topic donde se recibe el comando
+#define TOPIC_APERTURA "gimnasio/puerta/apertura"       // Topic donde se publica el estado de la puerta
 #define TOPIC_OCUPACION "gimnasio/ocupacion/cantidad"   // Topic donde se publica la cantidad de gente
 #define CAPACIDAD_MAXIMA 50                             // Tope físico del gimnasio
 int cantidadPersonas = 0;                               // Contador de ocupación actual, arranca en 0
@@ -228,6 +231,18 @@ void publicarOcupacion(int valor)
   }
 }
 
+void publicarEstado(char* estado)
+{
+  if (mqttClient.publish(TOPIC_APERTURA, estado, false))
+  {
+    Serial.println(String("MQTT: publicado ") + estado);
+  }
+  else
+  {
+    Serial.println(String("MQTT: fallo el publish, state=") + mqttClient.state());
+  }
+}
+
 bool conectarMQTT()
 {
   if (WiFi.status() != WL_CONNECTED)
@@ -239,11 +254,36 @@ bool conectarMQTT()
   if (mqttClient.connect(MQTT_CLIENT_ID))
   {
     Serial.println("MQTT conectado");
+    mqttClient.subscribe(TOPIC_COMANDO);
     return true;
   }
 
   Serial.println(String("MQTT: fallo la conexion, state=") + mqttClient.state());
   return false;
+}
+
+void callbackMQTT(char* topic, byte* payload, unsigned int length)
+{
+  if (strcmp(topic, TOPIC_COMANDO) != 0) return;
+
+
+  // El payload NO viene terminado en '\0': hay que copiarlo
+  char dni[TAM_DNI + 1];
+  if (length == 0 || length > TAM_DNI) 
+  {
+    publicarEstado("ERROR");
+    return;
+  }
+  memcpy(dni, payload, length);
+  dni[length] = '\0';
+  
+  bool validacion = strcmp(dni, PASS_TEST) == 0;
+
+  events ev = (validacion) ? EV_CONTRASENIA_VALIDA : EV_CONTRASENIA_INVALIDA;
+
+  xQueueSend(queueEvents, &ev, 0);
+
+  validacion ? publicarEstado("OK") : publicarEstado("ERROR");
 }
 
 void v_task_mqtt(void *pvParameters)
@@ -720,6 +760,7 @@ void setup()
   conectarWiFi();
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setSocketTimeout(2);      // segundos: evita bloqueos largos si el broker no responde
+  mqttClient.setCallback(callbackMQTT);
 
   xTaskCreate(v_loop_task,          "v_loop_task",          4096, NULL, 1, &loopNewEventHandler);
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);
