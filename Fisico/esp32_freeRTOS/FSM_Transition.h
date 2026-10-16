@@ -85,9 +85,12 @@ void ingreso_tecla()
 
   if (idxPassKeypad < TAM_DNI)
   {
+    xSemaphoreTake(mutexUltimaTecla, portMAX_DELAY);
     passKeypad[idxPassKeypad] = ultimo_caracter;
     idxPassKeypad++;
     passKeypad[idxPassKeypad] = '\0';
+    xSemaphoreGive(mutexUltimaTecla);
+
     lcd.setCursor(0, 1);
     lcd.print(passKeypad);
 
@@ -100,6 +103,31 @@ void resetear_teclado()
   detener_timer_teclado();
   clearPasskeypad();
   mostrar_pantalla_reposo();
+}
+
+void obtener_datos_teclado()
+{
+  MensajeQueue_t msg;
+  msg.tipo = TIPO_CHAR;
+  msg.valor_touch = 0;
+
+  xSemaphoreTake(mutexUltimaTecla, portMAX_DELAY);
+  strcpy(msg.passKeypad_mqtt, passKeypad);
+  if (idxPassKeypad < TAM_DNI) 
+  {
+    msg.passKeypad_mqtt[idxPassKeypad + 1] = '\0';  // asegurar terminación nula
+  } 
+  xSemaphoreGive(mutexUltimaTecla);
+
+  xQueueSend(queueDatos, &msg, 0);
+}
+
+void obtener_valor_touch()
+{
+  MensajeQueue_t msg;
+  msg.tipo = TIPO_ENTERO;
+  msg.valor_touch = touchRead(TOUCH_PIN);
+  xQueueSend(queueDatos, &msg, 0);
 }
 
 void abrir_puerta()
@@ -121,13 +149,13 @@ void abrir_puerta()
 void abrir_puerta_ingreso()
 {
   abrir_puerta();
-  actualizarYPublicarOcupacion(+1);
+  //actualizarYPublicarOcupacion(+1);
 }
 
 void abrir_puerta_salida()
 {
   abrir_puerta();
-  actualizarYPublicarOcupacion(-1);
+  //actualizarYPublicarOcupacion(-1);
 }
 
 void fin_carrera_abierto()

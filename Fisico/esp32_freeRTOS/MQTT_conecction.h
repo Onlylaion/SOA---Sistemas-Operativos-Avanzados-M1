@@ -24,12 +24,12 @@ void conectarWiFi()
   }
 }
 
-void publicarOcupacion(int valor)
+void publicarSensorTouch(int valor)
 {
   char payload[8];
   sprintf(payload, "%d", valor);
 
-  if (mqttClient.publish(TOPIC_OCUPACION, payload, true))
+  if (mqttClient.publish(TOPIC_DATOS, payload, false))
   {
     Serial.println(String("MQTT: publicado ") + payload);
   }
@@ -39,11 +39,11 @@ void publicarOcupacion(int valor)
   }
 }
 
-void publicarEstado(char* estado)
+void publicarSensorKeypad(char* passKeypad)
 {
-  if (mqttClient.publish(TOPIC_APERTURA, estado, false))
+  if (mqttClient.publish(TOPIC_DATOS, passKeypad, false))
   {
-    Serial.println(String("MQTT: publicado ") + estado);
+    Serial.println(String("MQTT: publicado ") + passKeypad);
   }
   else
   {
@@ -72,78 +72,62 @@ bool conectarMQTT()
 
 void callbackMQTT(char* topic, byte* payload, unsigned int length)
 {
-  if (strcmp(topic, TOPIC_COMANDO) != 0) return;
-
-
-  // El payload NO viene terminado en '\0': hay que copiarlo
-  char dni[TAM_DNI + 1];
-  if (length == 0 || length > TAM_DNI) 
+  if (strcmp(topic, TOPIC_COMANDO) == 0)
   {
-    publicarEstado("ERROR");
-    return;
+    Serial.println("MQTT: comando recibido");
+    Serial.println("Topic: " + String(topic));
   }
-  memcpy(dni, payload, length);
-  dni[length] = '\0';
-  
-  bool validacion = strcmp(dni, PASS_TEST) == 0;
 
-  events ev = (validacion) ? EV_CONTRASENIA_VALIDA : EV_CONTRASENIA_INVALIDA;
+  events ev = EV_COMANDO_MQTT;
 
   xQueueSend(queueEvents, &ev, 0);
+}
 
-  validacion ? publicarEstado("OK") : publicarEstado("ERROR");
+void publicarMensaje(MensajeQueue_t &msg)
+{
+  if (msg.tipo == TIPO_ENTERO)
+  {
+    publicarSensorTouch(msg.valor_touch);
+  }
+  else if (msg.tipo == TIPO_CHAR)
+  {
+    publicarSensorKeypad(msg.passKeypad_mqtt);
+  }
+  else
+  {
+    Serial.println("MQTT: tipo de mensaje desconocido");
+  }
 }
 
 void v_task_mqtt(void *pvParameters)
 {
-  int ocupacionActual = 0;
+  MensajeQueue_t msg;
   unsigned long ultimoIntento = 0;
   bool primerIntento = true;
 
   while (1)
   {
-    int nuevoValor;
-    bool hayNuevoValor = (xQueueReceive(queueOcupacion, &nuevoValor, pdMS_TO_TICKS(50)) == pdTRUE);
-    if (hayNuevoValor)
-    {
-      ocupacionActual = nuevoValor;
-    }
+    bool hayNuevoValor = (xQueueReceive(queueDatos, &msg, pdMS_TO_TICKS(50)) == pdTRUE);
 
     if (mqttClient.connected())
     {
       mqttClient.loop();
       if (hayNuevoValor)
       {
-        publicarOcupacion(ocupacionActual);
+        publicarMensaje(msg);
       }
     }
     else if (primerIntento || millis() - ultimoIntento >= INTERVALO_RECONEXION_MQTT)
     {
       primerIntento = false;
       ultimoIntento = millis();
-      if (conectarMQTT())
+      
+      if (conectarMQTT() && hayNuevoValor)
       {
-        publicarOcupacion(ocupacionActual);
+        publicarMensaje(msg);
       }
     }
   }
-}
-
-void actualizarYPublicarOcupacion(int delta)                  // delta = +1 al entrar, -1 al salir
-{
-  cantidadPersonas += delta;
-
-  if (cantidadPersonas < 0) 
-  {
-    cantidadPersonas = 0;
-  }
-  
-  if (cantidadPersonas > CAPACIDAD_MAXIMA) 
-  {
-    cantidadPersonas = CAPACIDAD_MAXIMA;
-  }
-
-  xQueueOverwrite(queueOcupacion, &cantidadPersonas);         
 }
 
 #endif // PUERTA_MQTT_CONECCTION_H

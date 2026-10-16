@@ -55,9 +55,10 @@ void setup()
 {
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
-  queueOcupacion = xQueueCreate(1, sizeof(int));
+  queueDatos = xQueueCreate(SIZE_QUEUE_DATOS, sizeof(MensajeQueue_t));
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
+  mutexUltimaTecla = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
 
   conectarWiFi();
