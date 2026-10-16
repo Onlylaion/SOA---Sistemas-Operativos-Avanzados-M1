@@ -56,6 +56,7 @@ void setup()
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
   queueOcupacion = xQueueCreate(1, sizeof(int));
+  queueNotif = xQueueCreate(10, sizeof(notifs));   // <-- nueva
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();

@@ -41,11 +41,23 @@ const char* WIFI_PASS = "TKHZNZUMNJRZ";
 const char* MQTT_BROKER    = "192.168.0.7";
 const uint16_t MQTT_PORT   = 1883;
 const char* MQTT_CLIENT_ID = "esp32-puerta-gym";
-#define TOPIC_COMANDO "gimnasio/puerta/comando"         // Topic donde se recibe el comando
-#define TOPIC_APERTURA "gimnasio/puerta/apertura"       // Topic donde se publica el estado de la puerta
-#define TOPIC_OCUPACION "gimnasio/ocupacion/cantidad"   // Topic donde se publica la cantidad de gente
+#define TOPIC_COMANDO "gimnasio/puerta/abrirPuerta"         // Topic donde se recibe el comando
+#define TOPIC_APERTURA "gimnasio/puerta/notificarApertura"       // Topic donde se publica la apertura de la puerta
+#define TOPIC_SALIDA "gimnasio/puerta/notificarSalida"           // Topic donde se publica la salida de una persona
+#define TOPIC_OCUPACION "gimnasio/cantidadPersonas"   // Topic donde se publica la cantidad de gente
 #define CAPACIDAD_MAXIMA 50                             // Tope físico del gimnasio
 int cantidadPersonas = 0;                               // Contador de ocupación actual, arranca en 0
+
+enum notifs { NOTIF_APERTURA_OK, NOTIF_APERTURA_ERROR, NOTIF_SALIDA };
+QueueHandle_t queueNotif = NULL;
+
+enum TipoApertura {
+  APERTURA_NINGUNA,
+  APERTURA_INGRESO,
+  APERTURA_SALIDA
+};
+
+TipoApertura tipoAperturaPendiente = APERTURA_NINGUNA;
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
