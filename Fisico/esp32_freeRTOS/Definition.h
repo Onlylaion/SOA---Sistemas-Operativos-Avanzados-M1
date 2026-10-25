@@ -45,6 +45,7 @@ const char* MQTT_CLIENT_ID = "esp32-puerta-gym";
 #define TOPIC_APERTURA "gimnasio/puerta/notificarApertura"       // Topic donde se publica la apertura de la puerta
 #define TOPIC_SALIDA "gimnasio/puerta/notificarSalida"           // Topic donde se publica la salida de una persona
 #define TOPIC_OCUPACION "gimnasio/cantidadPersonas"   // Topic donde se publica la cantidad de gente
+#define TOPIC_ERROR "gimnasio/puerta/notificarError"   // Topic donde se publica un error de apertura/salida
 #define CAPACIDAD_MAXIMA 50                             // Tope físico del gimnasio
 int cantidadPersonas = 0;                               // Contador de ocupación actual, arranca en 0
 

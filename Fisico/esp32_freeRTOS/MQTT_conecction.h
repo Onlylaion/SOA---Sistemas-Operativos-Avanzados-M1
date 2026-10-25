@@ -107,9 +107,9 @@ void v_task_mqtt(void *pvParameters)
       {
         switch (n)
         {
-          case NOTIF_APERTURA_OK:    publicarTexto(TOPIC_APERTURA, "OK");      break;
-          case NOTIF_APERTURA_ERROR: publicarTexto(TOPIC_APERTURA, "ERROR");   break;
-          case NOTIF_SALIDA:         publicarTexto(TOPIC_SALIDA,   "SALIDA");  break;
+          case NOTIF_APERTURA_OK:    publicarTexto(TOPIC_APERTURA, "+1");break;
+          case NOTIF_APERTURA_ERROR: publicarTexto(TOPIC_ERROR,    "ERROR");break;
+          case NOTIF_SALIDA:         publicarTexto(TOPIC_SALIDA,   "-1");break;
         }
       }
     }
