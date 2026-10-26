@@ -24,32 +24,7 @@ void conectarWiFi()
   }
 }
 
-void publicarOcupacion(int valor)
-{
-  char payload[8];
-  sprintf(payload, "%d", valor);
 
-  if (mqttClient.publish(TOPIC_OCUPACION, payload, true))
-  {
-    Serial.println(String("MQTT: publicado ") + payload);
-  }
-  else
-  {
-    Serial.println(String("MQTT: fallo el publish, state=") + mqttClient.state());
-  }
-}
-
-void publicarEstado(char* estado)
-{
-  if (mqttClient.publish(TOPIC_APERTURA, estado, false))
-  {
-    Serial.println(String("MQTT: publicado ") + estado);
-  }
-  else
-  {
-    Serial.println(String("MQTT: fallo el publish, state=") + mqttClient.state());
-  }
-}
 
 bool conectarMQTT()
 {
@@ -70,28 +45,38 @@ bool conectarMQTT()
   return false;
 }
 
+
+void publicarTexto(const char* topic, const char* msg, bool retain = false)
+{
+  if (mqttClient.publish(topic, msg, retain))
+    Serial.println(String("MQTT: ") + topic + " <- " + msg);
+  else
+    Serial.println(String("MQTT: fallo publish, state=") + mqttClient.state());
+}
+
+// Se llama desde cualquier tarea: solo encola, no toca mqttClient
+void enviarNotificacion(notifs n)
+{
+  if (queueNotif) xQueueSend(queueNotif, &n, 0);
+}
+
 void callbackMQTT(char* topic, byte* payload, unsigned int length)
 {
   if (strcmp(topic, TOPIC_COMANDO) != 0) return;
 
-
-  // El payload NO viene terminado en '\0': hay que copiarlo
-  char dni[TAM_DNI + 1];
-  if (length == 0 || length > TAM_DNI) 
+  if (length == 0 || length > TAM_DNI)
   {
-    publicarEstado("ERROR");
+    enviarNotificacion(NOTIF_APERTURA_ERROR);
     return;
   }
+
+  char dni[TAM_DNI + 1];
   memcpy(dni, payload, length);
   dni[length] = '\0';
-  
-  bool validacion = strcmp(dni, PASS_TEST) == 0;
 
-  events ev = (validacion) ? EV_CONTRASENIA_VALIDA : EV_CONTRASENIA_INVALIDA;
-
+  events ev = (strcmp(dni, PASS_TEST) == 0) ? EV_CONTRASENIA_VALIDA : EV_CONTRASENIA_INVALIDA;
   xQueueSend(queueEvents, &ev, 0);
-
-  validacion ? publicarEstado("OK") : publicarEstado("ERROR");
+  // La respuesta OK/ERROR la manda la transición de la FSM (ver abajo)
 }
 
 void v_task_mqtt(void *pvParameters)
@@ -104,30 +89,50 @@ void v_task_mqtt(void *pvParameters)
   {
     int nuevoValor;
     bool hayNuevoValor = (xQueueReceive(queueOcupacion, &nuevoValor, pdMS_TO_TICKS(50)) == pdTRUE);
-    if (hayNuevoValor)
-    {
-      ocupacionActual = nuevoValor;
-    }
+    if (hayNuevoValor) ocupacionActual = nuevoValor;
 
     if (mqttClient.connected())
     {
       mqttClient.loop();
+
       if (hayNuevoValor)
       {
-        publicarOcupacion(ocupacionActual);
+        char buf[8];
+        sprintf(buf, "%d", ocupacionActual);
+        publicarTexto(TOPIC_OCUPACION, buf, true);
+      }
+
+      notifs n;
+      while (xQueueReceive(queueNotif, &n, 0) == pdTRUE)
+      {
+        switch (n)
+        {
+          case NOTIF_APERTURA_OK:    publicarTexto(TOPIC_APERTURA, "+1");break;
+          case NOTIF_APERTURA_ERROR: publicarTexto(TOPIC_ERROR,    "ERROR");break;
+          case NOTIF_SALIDA:         publicarTexto(TOPIC_SALIDA,   "-1");break;
+        }
       }
     }
-    else if (primerIntento || millis() - ultimoIntento >= INTERVALO_RECONEXION_MQTT)
+    else
     {
-      primerIntento = false;
-      ultimoIntento = millis();
-      if (conectarMQTT())
+      notifs descarte;
+      while (xQueueReceive(queueNotif, &descarte, 0) == pdTRUE) { }  // sin conexión se descartan
+
+      if (primerIntento || millis() - ultimoIntento >= INTERVALO_RECONEXION_MQTT)
       {
-        publicarOcupacion(ocupacionActual);
+        primerIntento = false;
+        ultimoIntento = millis();
+        if (conectarMQTT())
+        {
+          char buf[8];
+          sprintf(buf, "%d", ocupacionActual);
+          publicarTexto(TOPIC_OCUPACION, buf, true);
+        }
       }
     }
   }
 }
+
 
 void actualizarYPublicarOcupacion(int delta)                  // delta = +1 al entrar, -1 al salir
 {

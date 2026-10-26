@@ -56,6 +56,7 @@ void setup()
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
   queueOcupacion = xQueueCreate(1, sizeof(int));
+  queueNotif = xQueueCreate(10, sizeof(notifs));   // <-- nueva
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
@@ -67,5 +68,5 @@ void setup()
 
   xTaskCreate(v_loop_task,          "v_loop_task",          4096, NULL, 1, &loopNewEventHandler);
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);
-  xTaskCreate(v_task_mqtt,          "v_task_mqtt",          4096, NULL, 1, &mqttTaskHandler);
+  xTaskCreate(v_task_mqtt,          "v_task_mqtt",          6144, NULL, 1, &mqttTaskHandler);
 }
