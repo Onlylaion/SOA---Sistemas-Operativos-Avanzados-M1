@@ -14,6 +14,8 @@
 #include <WiFi.h>
 #include <mqtt_client.h>       // esp-mqtt (ESP-IDF), soporta MQTT sobre WebSocket seguro (wss)
 #include <esp_crt_bundle.h>    // bundle de CAs para validar el certificado de Cloudflare
+#include <HTTPClient.h>
+#include <ArduinoJson.h>     
 
 #define SERIAL_DEBUG_ENABLED 1
 #if SERIAL_DEBUG_ENABLED
@@ -199,5 +201,10 @@ QueueHandle_t queueEvents = NULL;
 #define SIZE_QUEUE_OCUPACION 10          // movimientos (+1/-1) pendientes de publicar si se cae la conexión
 QueueHandle_t queueOcupacion = NULL;
 TaskHandle_t  mqttTaskHandler = NULL;
+
+#define SIZE_QUEUE_REST 1
+#define INTERVALO_RECONEXION_REST 5000   // ms entre reintentos de enviar_dni_REST
+QueueHandle_t queueREST = NULL;
+TaskHandle_t  restTaskHandler = NULL;
 
 #endif // PUERTA_DEFINITION_H

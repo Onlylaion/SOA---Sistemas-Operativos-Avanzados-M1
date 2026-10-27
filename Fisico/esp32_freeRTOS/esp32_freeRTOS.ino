@@ -1,5 +1,6 @@
 #include "Definition.h"
 #include "MQTT_conecction.h"
+#include "REST_comunicacion.h"
 #include "Sensors.h"
 #include "Timers.h"
 #include "Actuators.h"
@@ -56,6 +57,7 @@ void setup()
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
   queueOcupacion = xQueueCreate(SIZE_QUEUE_OCUPACION, sizeof(int));
+  queueREST = xQueueCreate(SIZE_QUEUE_REST, sizeof(char[TAM_DNI + 1]));
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
@@ -66,4 +68,5 @@ void setup()
   xTaskCreate(v_loop_task,          "v_loop_task",          4096, NULL, 1, &loopNewEventHandler);
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);
   xTaskCreate(v_task_mqtt,          "v_task_mqtt",          4096, NULL, 1, &mqttTaskHandler);
+  xTaskCreate(v_task_client_http,   "v_task_client_http",   4096, NULL, 1, &restTaskHandler);
 }
