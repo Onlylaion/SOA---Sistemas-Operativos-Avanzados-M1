@@ -55,15 +55,13 @@ void setup()
 {
   Serial.begin(115200);
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
-  queueOcupacion = xQueueCreate(1, sizeof(int));
+  queueOcupacion = xQueueCreate(SIZE_QUEUE_OCUPACION, sizeof(int));
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
 
   conectarWiFi();
-  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-  mqttClient.setSocketTimeout(2);      // segundos: evita bloqueos largos si el broker no responde
-  mqttClient.setCallback(callbackMQTT);
+  iniciarMQTT();
 
   xTaskCreate(v_loop_task,          "v_loop_task",          4096, NULL, 1, &loopNewEventHandler);
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);

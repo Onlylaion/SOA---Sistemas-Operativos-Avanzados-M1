@@ -12,7 +12,8 @@
 #include <freertos/timers.h>
 #include <freertos/semphr.h>
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <mqtt_client.h>       // esp-mqtt (ESP-IDF), soporta MQTT sobre WebSocket seguro (wss)
+#include <esp_crt_bundle.h>    // bundle de CAs para validar el certificado de Cloudflare
 
 #define SERIAL_DEBUG_ENABLED 1
 #if SERIAL_DEBUG_ENABLED
@@ -38,17 +39,18 @@ const char* WIFI_SSID = "TeleCentro-85b5";
 const char* WIFI_PASS = "TKHZNZUMNJRZ";
 
 // ---- MQTT ----
-const char* MQTT_BROKER    = "192.168.0.7";
-const uint16_t MQTT_PORT   = 1883;
+// El broker se publica por Cloudflare Tunnel, que solo deja pasar HTTP/WebSocket:
+// por eso se usa MQTT sobre WebSocket con TLS (wss) en el 443, no TCP plano al 1883.
+const char* MQTT_URI       = "wss://soa.alfatechnologies.com.ar:443/mqtt";
 const char* MQTT_CLIENT_ID = "esp32-puerta-gym";
-#define TOPIC_COMANDO "gimnasio/puerta/comando"         // Topic donde se recibe el comando
-#define TOPIC_APERTURA "gimnasio/puerta/apertura"       // Topic donde se publica el estado de la puerta
-#define TOPIC_OCUPACION "gimnasio/ocupacion/cantidad"   // Topic donde se publica la cantidad de gente
-#define CAPACIDAD_MAXIMA 50                             // Tope físico del gimnasio
-int cantidadPersonas = 0;                               // Contador de ocupación actual, arranca en 0
+const char* MQTT_USER      = "";   // vacío = anónimo (el ACL del broker rechaza publish anónimos)
+const char* MQTT_PASS      = "";
+#define TOPIC_APERTURA "gimnasio/puerta/notificarApertura"   // Se publica {"cantidad": 1} al entrar alguien
+#define TOPIC_SALIDA   "gimnasio/puerta/notificarSalida"     // Se publica {"cantidad": -1} al salir alguien
+#define TOPIC_COMANDO  "gimnasio/puerta/abrirPuerta"
 
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
+esp_mqtt_client_handle_t mqttClient = NULL;
+volatile bool mqttConectado = false;     // lo escribe el handler de esp-mqtt, lo lee v_task_mqtt
 
 // ---- Buzzer ----
 const int BUZZER_PIN = 13;
@@ -102,6 +104,11 @@ SemaphoreHandle_t semTimeoutTeclado = NULL;
 bool timer_puerta_activo = false;
 unsigned long lct = 0;
 int tiempoRestante = TIEMPO_PUERTA_ABIERTA / 1000;
+
+// ---- Tipo de apertura en curso ----
+// Lo fija abrir_puerta_ingreso/abrir_puerta_salida y lo lee fin_carrera_abierto
+// para saber si publicar +1 o -1. Solo lo usa v_loop_task, no necesita mutex.
+enum tipos_apertura { APERTURA_INGRESO, APERTURA_SALIDA } tipo_apertura = APERTURA_INGRESO;
 
 // ---- Mensaje temporal en pantalla (error / puerta cerrada) ----
 bool mostrando_error = false;
@@ -188,8 +195,9 @@ TaskHandle_t loopTaskHandler = NULL;
 TaskHandle_t loopNewEventHandler = NULL;
 QueueHandle_t queueEvents = NULL;
 
-#define INTERVALO_RECONEXION_MQTT 5000   
-QueueHandle_t queueOcupacion = NULL;     
+#define INTERVALO_RECONEXION_MQTT 5000   // ms entre reintentos (lo maneja esp-mqtt)
+#define SIZE_QUEUE_OCUPACION 10          // movimientos (+1/-1) pendientes de publicar si se cae la conexión
+QueueHandle_t queueOcupacion = NULL;
 TaskHandle_t  mqttTaskHandler = NULL;
 
 #endif // PUERTA_DEFINITION_H

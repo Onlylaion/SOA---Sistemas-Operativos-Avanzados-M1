@@ -118,16 +118,16 @@ void abrir_puerta()
   current_state = ST_ABRIENDO_PUERTA;
 }
 
-void abrir_puerta_ingreso()
+void abrir_puerta_ingreso()        // teclado o Android 
 {
+  tipo_apertura = APERTURA_INGRESO;
   abrir_puerta();
-  actualizarYPublicarOcupacion(+1);
 }
 
-void abrir_puerta_salida()
+void abrir_puerta_salida()         // sensor touch 
 {
+  tipo_apertura = APERTURA_SALIDA;
   abrir_puerta();
-  actualizarYPublicarOcupacion(-1);
 }
 
 void fin_carrera_abierto()
@@ -148,6 +148,8 @@ void fin_carrera_abierto()
   lcd.print("Tiempo restante:");
   lcd.setCursor(0, 1);
   lcd.print(tiempoRestante);
+
+  actualizarYPublicarOcupacion((tipo_apertura == APERTURA_INGRESO) ? +1 : -1);
 
   current_state = ST_PUERTA_ABIERTA;
 }
