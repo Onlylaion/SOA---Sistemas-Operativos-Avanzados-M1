@@ -31,7 +31,7 @@ bool publicarMovimiento(int delta)            // delta = +1 al entrar, -1 al sal
   snprintf(payload, sizeof(payload), "{\"cantidad\": %d}", delta);
 
   // QoS 1 sin retain: cada mensaje es un evento, el servidor lleva la cuenta
-  if (esp_mqtt_client_publish(mqttClient, topic, payload, 0, 1, 0) >= 0)
+  if (esp_mqtt_client_publish(mqttClient, topic, payload, 0, 2, 0) >= 0)
   {
     Serial.println(String("MQTT: publicado ") + topic + " " + payload);
     return true;
