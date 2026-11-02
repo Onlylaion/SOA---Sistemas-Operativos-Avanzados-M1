@@ -61,6 +61,7 @@ void contrasenia_invalida()
   xSemaphoreGive(mutexTimersCompartidos);
 
   clearPasskeypad();
+  enviarNotificacion(NOTIF_APERTURA_ERROR);
 }
 
 void limpiar_error()               // también limpia el mensaje "Puerta Cerrada"
@@ -102,6 +103,18 @@ void resetear_teclado()
   mostrar_pantalla_reposo();
 }
 
+void abrir_puerta_ingreso()
+{
+  tipoAperturaPendiente = APERTURA_INGRESO;
+  abrir_puerta();
+}
+
+void abrir_puerta_salida()
+{
+  tipoAperturaPendiente = APERTURA_SALIDA;
+  abrir_puerta();
+}
+
 void abrir_puerta()
 {
   detener_timer_teclado();
@@ -133,6 +146,25 @@ void abrir_puerta_salida()         // sensor touch
 void fin_carrera_abierto()
 {
   motor_detener();                
+
+  switch (tipoAperturaPendiente)
+  {
+    case APERTURA_INGRESO:
+      actualizarYPublicarOcupacion(+1);
+      enviarNotificacion(NOTIF_APERTURA_OK);
+      break;
+
+    case APERTURA_SALIDA:
+      actualizarYPublicarOcupacion(-1);
+      enviarNotificacion(NOTIF_SALIDA);
+      break;
+
+    case APERTURA_NINGUNA:
+      break;
+  }
+
+  tipoAperturaPendiente = APERTURA_NINGUNA;
+
   digitalWrite(GREEN_LED, LOW);
   clearPasskeypad();
 
