@@ -142,7 +142,6 @@ void v_task_mqtt(void *pvParameters)
   }
 }
 
-
 void actualizarYPublicarOcupacion(int delta)                  // delta = +1 al entrar, -1 al salir
 {
   if (xQueueSend(queueOcupacion, &delta, 0) != pdPASS)
