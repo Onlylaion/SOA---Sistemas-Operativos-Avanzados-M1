@@ -13,8 +13,6 @@ events verificarEstadoSensorKeypad()
     if (tecla == '#')
     {
       xQueueSend(queueREST, &passKeypad, pdMS_TO_TICKS(200));  // se envía a la tarea REST para validar el DNI
-      /*new_event = (strcmp(passKeypad, PASS_TEST) == 0)
-                    ? EV_CONTRASENIA_VALIDA : EV_CONTRASENIA_INVALIDA;*/
     }
     else if (tecla == '*')
     {

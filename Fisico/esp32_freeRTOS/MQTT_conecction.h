@@ -11,7 +11,7 @@ void conectarWiFi()
   unsigned long inicio = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - inicio < 15000)
   {
-    delay(300);
+    vTaskDelay(pdMS_TO_TICKS(300));
   }
 
   if (WiFi.status() == WL_CONNECTED)

@@ -134,7 +134,6 @@ void fin_carrera_abierto()
 {
   motor_detener();                
   digitalWrite(GREEN_LED, LOW);
-  clearPasskeypad();
 
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   lct = millis();
