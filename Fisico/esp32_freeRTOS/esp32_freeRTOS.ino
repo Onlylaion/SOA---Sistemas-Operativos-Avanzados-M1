@@ -58,6 +58,7 @@ void setup()
   queueEvents = xQueueCreate(SIZE_QUEUE_TIMER, sizeof(events));
   queueOcupacion = xQueueCreate(SIZE_QUEUE_OCUPACION, sizeof(int));
   queueREST = xQueueCreate(SIZE_QUEUE_REST, sizeof(char[TAM_DNI + 1]));
+  queueBuzzer = xQueueCreate(SIZE_QUEUE_BUZZER, sizeof(melodias));
 
   mutexTimersCompartidos = xSemaphoreCreateMutex();
   semTimeoutTeclado = xSemaphoreCreateBinary();
@@ -69,4 +70,5 @@ void setup()
   xTaskCreate(v_task_get_new_event, "v_task_get_new_event", 4096, NULL, 1, &loopTaskHandler);
   xTaskCreate(v_task_mqtt,          "v_task_mqtt",          4096, NULL, 1, &mqttTaskHandler);
   xTaskCreate(v_task_client_http,   "v_task_client_http",   4096, NULL, 1, &restTaskHandler);
+  xTaskCreate(v_task_buzzer, "v_task_buzzer", 2048, NULL, 1, &buzzerTaskHandler);
 }

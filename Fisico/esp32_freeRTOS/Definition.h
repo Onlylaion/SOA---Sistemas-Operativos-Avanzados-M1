@@ -57,6 +57,22 @@ volatile bool mqttConectado = false;     // lo escribe el handler de esp-mqtt, l
 // ---- Buzzer ----
 const int BUZZER_PIN = 13;
 
+typedef struct {
+  uint16_t frecuencia;   // Hz; 0 = silencio
+  uint16_t duracion;     // ms
+} nota_t;
+
+// E5 E5 _ E5 _ C5 E5 _ G5 ___ G4
+const nota_t MELODIA_MARIO[] = {
+  {659, 125}, {659, 125}, {0, 125}, {659, 125}, {0, 125},
+  {523, 125}, {659, 125}, {0, 125}, {784, 125}, {0, 375},
+  {392, 125}
+};
+#define CANT_NOTAS_MARIO (sizeof(MELODIA_MARIO) / sizeof(MELODIA_MARIO[0]))
+#define PAUSA_ENTRE_NOTAS 20
+
+enum melodias { MELODIA_ACCESO };
+
 // ---- Finales de carrera ----
 const int GREEN_PULSADOR = 25;   // fin de carrera: puerta abierta
 const int RED_PULSADOR   = 26;   // fin de carrera: puerta cerrada
@@ -206,5 +222,9 @@ TaskHandle_t  mqttTaskHandler = NULL;
 #define INTERVALO_RECONEXION_REST 5000   // ms entre reintentos de enviar_dni_REST
 QueueHandle_t queueREST = NULL;
 TaskHandle_t  restTaskHandler = NULL;
+
+#define SIZE_QUEUE_BUZZER 1
+QueueHandle_t queueBuzzer = NULL;
+TaskHandle_t  buzzerTaskHandler = NULL;
 
 #endif // PUERTA_DEFINITION_H
