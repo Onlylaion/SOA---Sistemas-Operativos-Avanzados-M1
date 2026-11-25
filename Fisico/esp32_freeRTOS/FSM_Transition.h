@@ -52,8 +52,10 @@ void contrasenia_invalida()
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("DNI Incorrecto");
-  digitalWrite(RED_LED, HIGH);     
-  tone(BUZZER_PIN, 500, 400);      
+  digitalWrite(RED_LED, HIGH);          
+
+  melodias pedido = PITIDO_ERROR;
+  xQueueSend(queueBuzzer, &pedido, 0);   // el buzzer lo maneja solo v_task_buzzer
 
   xSemaphoreTake(mutexTimersCompartidos, portMAX_DELAY);
   mostrando_error = true;
@@ -172,7 +174,8 @@ void mostrar_timer()
 
     if (tiempoRestante <= 5 && tiempoRestante > 0)
     {
-      tone(BUZZER_PIN, 1500, 50);  
+      melodias pedido = PITIDO_CUENTA;
+      xQueueSend(queueBuzzer, &pedido, 0);   // el buzzer lo maneja solo v_task_buzzer
     }
   }
 }

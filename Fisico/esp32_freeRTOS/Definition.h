@@ -71,7 +71,14 @@ const nota_t MELODIA_MARIO[] = {
 #define CANT_NOTAS_MARIO (sizeof(MELODIA_MARIO) / sizeof(MELODIA_MARIO[0]))
 #define PAUSA_ENTRE_NOTAS 20
 
-enum melodias { MELODIA_ACCESO };
+// Pitidos: son "melodías" de una sola nota
+const nota_t PITIDO_CUENTA_REGRESIVA[] = { {1500, 50} };   // antes: tone(BUZZER_PIN, 1500, 50)
+#define CANT_NOTAS_PITIDO_CUENTA (sizeof(PITIDO_CUENTA_REGRESIVA) / sizeof(PITIDO_CUENTA_REGRESIVA[0]))
+
+const nota_t PITIDO_DNI_INVALIDO[] = { {500, 400} };       // antes: tone(BUZZER_PIN, 500, 400)
+#define CANT_NOTAS_PITIDO_ERROR (sizeof(PITIDO_DNI_INVALIDO) / sizeof(PITIDO_DNI_INVALIDO[0]))
+
+enum melodias { MELODIA_ACCESO, PITIDO_CUENTA, PITIDO_ERROR };
 
 // ---- Finales de carrera ----
 const int GREEN_PULSADOR = 25;   // fin de carrera: puerta abierta

@@ -45,8 +45,10 @@ void tocar_melodia(const nota_t* melodia, size_t cantidad)
 {
   for (size_t i = 0; i < cantidad; i++)
   {
-    if (melodia[i].frecuencia > 0) tone(BUZZER_PIN, melodia[i].frecuencia);
-    else                           noTone(BUZZER_PIN);
+    if (melodia[i].frecuencia > 0) 
+      tone(BUZZER_PIN, melodia[i].frecuencia);
+    else
+      noTone(BUZZER_PIN);
     vTaskDelay(pdMS_TO_TICKS(melodia[i].duracion));
     noTone(BUZZER_PIN);
     vTaskDelay(pdMS_TO_TICKS(PAUSA_ENTRE_NOTAS));
@@ -59,7 +61,20 @@ void v_task_buzzer(void *pvParameters)
   while (1)
   {
     if (xQueueReceive(queueBuzzer, &pedido, portMAX_DELAY) == pdTRUE)
-      if (pedido == MELODIA_ACCESO) tocar_melodia(MELODIA_MARIO, CANT_NOTAS_MARIO);
+    {
+      switch (pedido)
+      {
+        case MELODIA_ACCESO: 
+          tocar_melodia(MELODIA_MARIO, CANT_NOTAS_MARIO);         
+          break;
+        case PITIDO_CUENTA:  
+          tocar_melodia(PITIDO_CUENTA_REGRESIVA, CANT_NOTAS_PITIDO_CUENTA);
+          break;
+        case PITIDO_ERROR:   
+          tocar_melodia(PITIDO_DNI_INVALIDO, CANT_NOTAS_PITIDO_ERROR);
+          break;
+      }
+    }
   }
 }
 
