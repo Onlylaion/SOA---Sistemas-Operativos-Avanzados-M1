@@ -41,4 +41,26 @@ void motor_detener()
   analogWrite(IN2, 0);   // ambos en 0 = el motor queda en punto muerto
 }
 
+void tocar_melodia(const nota_t* melodia, size_t cantidad)
+{
+  for (size_t i = 0; i < cantidad; i++)
+  {
+    if (melodia[i].frecuencia > 0) tone(BUZZER_PIN, melodia[i].frecuencia);
+    else                           noTone(BUZZER_PIN);
+    vTaskDelay(pdMS_TO_TICKS(melodia[i].duracion));
+    noTone(BUZZER_PIN);
+    vTaskDelay(pdMS_TO_TICKS(PAUSA_ENTRE_NOTAS));
+  }
+}
+
+void v_task_buzzer(void *pvParameters)
+{
+  melodias pedido;
+  while (1)
+  {
+    if (xQueueReceive(queueBuzzer, &pedido, portMAX_DELAY) == pdTRUE)
+      if (pedido == MELODIA_ACCESO) tocar_melodia(MELODIA_MARIO, CANT_NOTAS_MARIO);
+  }
+}
+
 #endif // PUERTA_ACTUATORS_H

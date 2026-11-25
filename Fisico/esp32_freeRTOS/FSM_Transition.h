@@ -121,6 +121,8 @@ void abrir_puerta()
 void abrir_puerta_ingreso()        // teclado o Android 
 {
   tipo_apertura = APERTURA_INGRESO;
+  melodias pedido = MELODIA_ACCESO;
+  xQueueSend(queueBuzzer, &pedido, 0);   // timeout 0: la FSM nunca espera
   abrir_puerta();
 }
 
